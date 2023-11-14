@@ -50,8 +50,9 @@ struct Vector
 struct Ray
 {
     Vector origin, direction;
+    int depth;
 
-    Ray(const Vector &origin, const Vector &direction) : origin(origin), direction(direction) {}
+    Ray(const Vector &origin, const Vector &direction, int depth) : origin(origin), direction(direction), depth(depth) {}
 };
 
 struct Sphere
@@ -77,7 +78,7 @@ struct Light
 // Scene Class
 struct Scene
 {
-    double near, left, right, bottom, top;
+    double near, left, right, bottom, top, width, height;
     std::vector<Sphere> spheres;
     std::vector<Light> lights;
     Vector backgroundColor, ambientColor;
@@ -86,66 +87,65 @@ struct Scene
     Scene() : near(0), left(0), right(0), bottom(0), top(0) {}
 
     // Constructor with parameters
-    Scene(double n, double l, double r, double b, double t,
+    Scene(double n, double l, double r, double b, double t, double w, double h,
           const std::vector<Sphere> &sph, const std::vector<Light> &lts,
           const Vector &bg, const Vector &ac, const std::string &output)
-        : near(n), left(l), right(r), bottom(b), top(t), spheres(sph), lights(lts),
+        : near(n), left(l), right(r), bottom(b), top(t), width(w), height(h), spheres(sph), lights(lts),
           backgroundColor(bg), ambientColor(ac), outputFilename(output) {}
 };
 
-// Function to check if a ray intersects with a sphere
-bool intersect(const Ray &ray, const Sphere &sphere, double &t)
+// Check if a ray intersects with a sphere
+bool intersect(const Ray &ray, const Sphere &sphere, float &t)
 {
-    Vector oc = ray.origin - sphere.position;
-    double a = ray.direction.dot(ray.direction);
-    double b = 2.0 * oc.dot(ray.direction);
-    double c = oc.dot(oc) - sphere.scale.dot(sphere.scale);
-    double discriminant = b * b - 4 * a * c;
+    Vector s = ray.origin - sphere.position;    // S
+    float a = ray.direction.dot(ray.direction); // |c|^2
+    float b = 2.0f * s.dot(ray.direction);      // 2 (S * c)
+    float c = s.dot(s) - 1;                     // S^2 - 1
+    // float c = s.dot(s) - sphere.scale.dot(sphere.scale); // S
+    float discriminant = b * b - 4 * a * c;
 
-    if (discriminant < 0)
+    // Zero or One intersections
+    if (discriminant <= 0)
     {
         return false;
     }
     else
     {
-        double t1 = (-b - std::sqrt(discriminant)) / (2.0 * a);
-        double t2 = (-b + std::sqrt(discriminant)) / (2.0 * a);
-
+        float t1 = (-b - std::sqrt(discriminant)) / (2.0 * a);
+        float t2 = (-b + std::sqrt(discriminant)) / (2.0 * a);
         t = (t1 < t2) ? t1 : t2;
         return true;
     }
 }
 
-// Function to trace rays and calculate pixel color
-Vector trace(const Ray &ray, const std::vector<Sphere> &spheres, const std::vector<Light> &lights, const Vector &ambient)
+// Trace rays and calculate pixel color
+Vector trace(const Ray &ray, const Scene &scene)
 {
-    Vector color(0, 0, 0);
-    double t;
-    const double epsilon = 0.001;
-
-    for (const auto &sphere : spheres)
+    int MAX_DEPTH = 5;
+    if (ray.depth < MAX_DEPTH)
     {
-        if (intersect(ray, sphere, t) && t > epsilon)
-        {
-            Vector hitPoint = ray.origin + ray.direction * t;
-            Vector normal = (hitPoint - sphere.position).normalize();
-            Vector lightDir(0, 0, 0);
-
-            for (const auto &light : lights)
-            {
-                lightDir = (light.position - hitPoint).normalize();
-                double lambertian = std::max(0.0, normal.dot(lightDir));
-                color = color + (sphere.color * lambertian) * light.color;
-            }
-
-            color = color + ambient * sphere.color;
-        }
+        return Vector(0, 0, 0); // Return black
     }
 
-    return color;
+    float t;
+    // Perform shading calculation (currently a simple color)
+    Vector clocal = Vector(1, 1, 1); // White color for now
+
+    for (const auto &sphere : scene.spheres)
+    {
+        if (!intersect(ray, sphere, t))
+        {
+            return scene.backgroundColor;
+        }
+        Vector intersection = ray.origin + ray.direction * t;
+        Vector cre = trace(Ray(intersection, ray.direction, ray.depth + 1), scene);
+        Vector cra = Vector(0, 0, 0); // Assume black color for refraction for now
+    }
+
+    return clocal;
 }
 
-// Function to split a string into tokens
+// Split file info into tokens
 std::vector<std::string> split(const std::string &str, char delimiter)
 {
     std::vector<std::string> tokens;
@@ -153,8 +153,16 @@ std::vector<std::string> split(const std::string &str, char delimiter)
     std::string token;
     while (std::getline(tokenStream, token, delimiter))
     {
+        // Remove leading and trailing whitespaces from each token
+        token.erase(token.find_last_not_of(" \t") + 1);
+        token.erase(0, token.find_first_not_of(" \t"));
         tokens.push_back(token);
     }
+    // get rid of empties
+    tokens.erase(std::remove_if(tokens.begin(), tokens.end(),
+                                [](const std::string &s)
+                                { return s.empty(); }),
+                 tokens.end());
     return tokens;
 }
 
@@ -196,6 +204,11 @@ Scene readInputFile(const std::string &filename)
             else if (tokens[0] == "TOP")
             {
                 scene.top = std::stod(tokens[1]);
+            }
+            else if (tokens[0] == "RES")
+            {
+                scene.width = std::stod(tokens[1]);
+                scene.height = std::stod(tokens[2]);
             }
             else if (tokens[0] == "SPHERE")
             {
@@ -243,6 +256,7 @@ void printScene(const Scene &scene)
     std::cout << "RIGHT: " << scene.right << std::endl;
     std::cout << "BOTTOM: " << scene.bottom << std::endl;
     std::cout << "TOP: " << scene.top << std::endl;
+    std::cout << "RES: " << scene.width << " x " << scene.height << std::endl;
 
     std::cout << "SPHERES:" << std::endl;
     for (const auto &sphere : scene.spheres)
@@ -281,6 +295,20 @@ int main(int argc, char *argv[])
     }
     Scene scene = readInputFile(argv[1]);
     printScene(scene);
+    Vector eye(0, 0, 0);
+    for (int r = 0; r < scene.height; ++r)
+    {
+        for (int c = 0; c < scene.width; ++c)
+        {
+            float pixelX = static_cast<float>(c) / scene.width - 0.5f;
+            float pixelY = 0.5f - static_cast<float>(r) / scene.height;
+            Vector pixelDirection(pixelX, pixelY, -scene.near);
+            Ray ray(eye, pixelDirection.normalize(), 1);
+
+            // color = raytrace(ray, sphere)
+            Vector color = trace(ray, scene);
+        }
+    }
 
     return 0;
 }
