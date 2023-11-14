@@ -274,35 +274,13 @@ using namespace std;
 
 int main(int argc, char *argv[])
 {
+    if (argc != 2)
+    {
+        cout << "Error, missing filename, call the command as \"./Raytracer [filename.txt]\"\n";
+        exit(1);
+    }
     Scene scene = readInputFile(argv[1]);
     printScene(scene);
-
-    // Scene setup
-
-    Vector ambient(0.2, 0.2, 0.2);
-    Vector backgroundColor(1, 1, 1);
-
-    int width = 600;
-    int height = 600;
-
-    // Image creation
-    std::ofstream outputFile("testSample.ppm");
-    outputFile << "P3\n"
-               << width << " " << height << "\n255\n";
-
-    for (int y = 0; y < height; ++y)
-    {
-        for (int x = 0; x < width; ++x)
-        {
-            double u = double(x) / width * 2 - 1;
-            double v = 1 - double(y) / height * 2;
-
-            Ray ray(Vector(0, 0, 0), Vector(u, v, -1).normalize());
-        }
-        outputFile << "\n";
-    }
-
-    outputFile.close();
 
     return 0;
 }
