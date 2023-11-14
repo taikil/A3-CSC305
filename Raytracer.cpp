@@ -64,6 +64,7 @@ struct Sphere
     Sphere(const std::string &name, const Vector &position, const Vector &scale,
            const Vector &color, double ka, double kd, double ks, double kr, double n)
         : name(name), position(position), scale(scale), color(color), ka(ka), kd(kd), ks(ks), kr(kr), n(n) {}
+    Sphere() : name(""), position(0, 0, 0), scale(0, 0, 0), color(0, 0, 0), ka(0), kd(0), ks(0), kr(0), n(0) {}
 };
 
 struct Light
@@ -95,26 +96,49 @@ struct Scene
 };
 
 // Check if a ray intersects with a sphere
-bool intersect(const Ray &ray, const Sphere &sphere, float &t)
+bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &closestSphere, float &t)
 {
-    Vector s = ray.origin - sphere.position;    // S
-    float a = ray.direction.dot(ray.direction); // |c|^2
-    float b = 2.0f * s.dot(ray.direction);      // 2 (S * c)
-    float c = s.dot(s) - 1;                     // S^2 - 1
-    // float c = s.dot(s) - sphere.scale.dot(sphere.scale); // S
-    float discriminant = b * b - 4 * a * c;
-
-    // Zero or One intersections
-    if (discriminant <= 0)
+    float minT = std::numeric_limits<float>::infinity();
+    for (const auto &sphere : spheres)
     {
-        return false;
+        float currentT;
+        Vector s = ray.origin - sphere.position;    // S
+        float a = ray.direction.dot(ray.direction); // |c|^2
+        float b = 2.0f * s.dot(ray.direction);      // 2 (S * c)
+        float c = s.dot(s) - 1;                     // S^2 - 1
+        // float c = s.dot(s) - sphere.scale.dot(sphere.scale); // S
+        float discriminant = b * b - 4 * a * c;
+
+        // 2 Intersections
+        if (discriminant >= 0)
+        {
+            // Find the nearest intersection point
+            float t1 = (-b - std::sqrt(discriminant)) / (2.0f * a);
+            float t2 = (-b + std::sqrt(discriminant)) / (2.0f * a);
+
+            if (t1 >= 0 && t1 < minT)
+            {
+                minT = t1;
+                closestSphere = sphere;
+                currentT = t1;
+            }
+
+            if (t2 >= 0 && t2 < minT)
+            {
+                minT = t2;
+                closestSphere = sphere;
+                currentT = t2;
+            }
+        }
+    }
+    if (minT < std::numeric_limits<float>::infinity())
+    {
+        t = minT;
+        return true; // Intersection found
     }
     else
     {
-        float t1 = (-b - std::sqrt(discriminant)) / (2.0 * a);
-        float t2 = (-b + std::sqrt(discriminant)) / (2.0 * a);
-        t = (t1 < t2) ? t1 : t2;
-        return true;
+        return false; // No intersection
     }
 }
 
@@ -127,22 +151,21 @@ Vector trace(const Ray &ray, const Scene &scene)
         return Vector(0, 0, 0); // Return black
     }
 
+    Sphere closestSphere = scene.spheres[0];
     float t;
     // Perform shading calculation (currently a simple color)
     Vector clocal = Vector(1, 1, 1); // White color for now
 
-    for (const auto &sphere : scene.spheres)
+    if (!intersect(ray, scene.spheres, closestSphere, t))
     {
-        if (!intersect(ray, sphere, t))
-        {
-            return scene.backgroundColor;
-        }
-        Vector intersection = ray.origin + ray.direction * t;
-        Vector cre = trace(Ray(intersection, ray.direction, ray.depth + 1), scene);
-        Vector cra = Vector(0, 0, 0); // Assume black color for refraction for now
+        return scene.backgroundColor;
     }
+    Vector intersection = ray.origin + ray.direction * t;
+    Vector cre = trace(Ray(intersection, ray.direction, ray.depth + 1), scene);
+    Vector cra = Vector(0, 0, 0); // Assume black color for refraction for now
+    // kRe + kRa not done yet
 
-    return clocal;
+    return clocal + cre + cra;
 }
 
 // Split file info into tokens
@@ -305,7 +328,6 @@ int main(int argc, char *argv[])
             Vector pixelDirection(pixelX, pixelY, -scene.near);
             Ray ray(eye, pixelDirection.normalize(), 1);
 
-            // color = raytrace(ray, sphere)
             Vector color = trace(ray, scene);
         }
     }
