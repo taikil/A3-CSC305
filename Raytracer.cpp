@@ -98,6 +98,7 @@ struct Scene
 // Check if a ray intersects with a sphere
 bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &closestSphere, float &t)
 {
+    // Initialize "min"
     float minT = std::numeric_limits<float>::infinity();
     for (const auto &sphere : spheres)
     {
@@ -110,7 +111,7 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
         float discriminant = b * b - 4 * a * c;
 
         // 2 Intersections
-        if (discriminant >= 0)
+        if (discriminant > 0)
         {
             // Find the nearest intersection point
             float t1 = (-b - std::sqrt(discriminant)) / (2.0f * a);
@@ -145,8 +146,8 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
 // Trace rays and calculate pixel color
 Vector trace(const Ray &ray, const Scene &scene)
 {
-    int MAX_DEPTH = 5;
-    if (ray.depth < MAX_DEPTH)
+    int MAX_DEPTH = 3;
+    if (ray.depth > MAX_DEPTH)
     {
         return Vector(0, 0, 0); // Return black
     }
@@ -271,6 +272,106 @@ Scene readInputFile(const std::string &filename)
     return scene;
 }
 
+// Output in P6 format, a binary file containing:
+// P6
+// ncolumns nrows
+// Max colour value
+// colours in binary format thus unreadable
+void save_imageP6(int Width, int Height, char *fname, unsigned char *pixels)
+{
+    FILE *fp;
+    const int maxVal = 255;
+
+    printf("Saving image %s: %d x %d\n", fname, Width, Height);
+    fp = fopen(fname, "wb");
+    if (!fp)
+    {
+        printf("Unable to open file '%s'\n", fname);
+        return;
+    }
+    fprintf(fp, "P6\n");
+    fprintf(fp, "%d %d\n", Width, Height);
+    fprintf(fp, "%d\n", maxVal);
+
+    for (int j = 0; j < Height; j++)
+    {
+        fwrite(&pixels[j * Width * 3], 3, Width, fp);
+    }
+
+    fclose(fp);
+}
+
+// Output in P3 format, a text file containing:
+// P3
+// ncolumns nrows
+// Max colour value (for us, and usually 255)
+// r1 g1 b1 r2 g2 b2 .....
+void save_imageP3(int Width, int Height, char *fname, unsigned char *pixels)
+{
+    FILE *fp;
+    const int maxVal = 255;
+
+    printf("Saving image %s: %d x %d\n", fname, Width, Height);
+    fp = fopen(fname, "w");
+    if (!fp)
+    {
+        printf("Unable to open file '%s'\n", fname);
+        return;
+    }
+    fprintf(fp, "P3\n");
+    fprintf(fp, "%d %d\n", Width, Height);
+    fprintf(fp, "%d\n", maxVal);
+
+    int k = 0;
+    for (int j = 0; j < Height; j++)
+    {
+
+        for (int i = 0; i < Width; i++)
+        {
+            fprintf(fp, " %d %d %d", pixels[k], pixels[k + 1], pixels[k + 2]);
+            k = k + 3;
+        }
+        fprintf(fp, "\n");
+    }
+    fclose(fp);
+}
+
+void writePPM(const std::string &filename, const std::vector<std::vector<Vector>> &pixelValues)
+{
+    std::ofstream ppmFile(filename);
+
+    if (ppmFile.is_open())
+    {
+        // Write PPM header
+        int width = pixelValues[0].size();
+        int height = pixelValues.size();
+        ppmFile << "P3\n"
+                << width << " " << height << "\n255\n";
+
+        // Write pixel values
+        for (const auto &row : pixelValues)
+        {
+            for (const auto &pixel : row)
+            {
+                int r = static_cast<int>(std::round(pixel.x * 255));
+                int g = static_cast<int>(std::round(pixel.y * 255));
+                int b = static_cast<int>(std::round(pixel.z * 255));
+                std::cout << "R " << r << " G " << g << " B" << b << std::endl;
+
+                ppmFile << r << " " << g << " " << b << " ";
+            }
+            ppmFile << "\n";
+        }
+
+        ppmFile.close();
+        std::cout << "Image generated successfully: " << filename << std::endl;
+    }
+    else
+    {
+        std::cerr << "Error: Unable to open file for writing." << std::endl;
+    }
+}
+
 // print input file info (for testing purposes)
 void printScene(const Scene &scene)
 {
@@ -319,6 +420,9 @@ int main(int argc, char *argv[])
     Scene scene = readInputFile(argv[1]);
     printScene(scene);
     Vector eye(0, 0, 0);
+    std::vector<std::vector<Vector>> pixelValues(scene.height, std::vector<Vector>(scene.width));
+
+    // Loop through each pixel
     for (int r = 0; r < scene.height; ++r)
     {
         for (int c = 0; c < scene.width; ++c)
@@ -329,8 +433,11 @@ int main(int argc, char *argv[])
             Ray ray(eye, pixelDirection.normalize(), 1);
 
             Vector color = trace(ray, scene);
+            pixelValues[r][c] = color;
         }
     }
+
+    writePPM(scene.outputFilename, pixelValues);
 
     return 0;
 }
