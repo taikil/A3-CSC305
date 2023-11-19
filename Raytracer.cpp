@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include "invert.cpp"
 
 // Define a basic Vector class to represent 3D points and vectors
 struct Vector
@@ -102,13 +103,38 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
     float minT = std::numeric_limits<float>::infinity();
     for (const auto &sphere : spheres)
     {
-        float currentT;
+        double T[4][4]{};
+        T[0][0] = sphere.scale.x;
+        T[1][1] = sphere.scale.y;
+        T[2][2] = sphere.scale.z;
+        T[3][0] = sphere.position.x;
+        T[3][1] = sphere.position.y;
+        T[3][2] = sphere.position.z;
+        T[3][3] = 1;
+
+        double inverseT[4][4]{};
+
+        invert_matrix(T, inverseT);
+
+        Vector invTrans = Vector(inverseT[3][0], inverseT[3][1], inverseT[3][2]);
+        Vector invScale = Vector(inverseT[0][0], inverseT[1][1], inverseT[2][2]);
+        Vector invOrigin = ray.origin * invTrans;
+        Vector invDirection = ray.origin * invScale;
+
+        float currentIntersection;
+        // std::cout << invTrans.x << " | " << invTrans.y << " | " << invTrans.z << " || " << invScale.x << " | " << invScale.y << " | " << invScale.z << "\n";
+
         Vector s = ray.origin - sphere.position;    // S
         float a = ray.direction.dot(ray.direction); // |c|^2
         float b = 2.0f * s.dot(ray.direction);      // 2 (S * c)
         float c = s.dot(s) - 1;                     // S^2 - 1
-        // float c = s.dot(s) - sphere.scale.dot(sphere.scale); // S
         float discriminant = b * b - 4 * a * c;
+
+        // Vector s = invOrigin - sphere.position;   // S
+        // float a = invDirection.dot(invDirection); // |c|^2
+        // float b = 2.0f * s.dot(invDirection);     // 2 (S * c)
+        // float c = s.dot(s) - 1;                   // S^2 - 1
+        // float discriminant = b * b - 4 * a * c;
 
         // 2 Intersections
         if (discriminant > 0)
@@ -121,14 +147,14 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
             {
                 minT = t1;
                 closestSphere = sphere;
-                currentT = t1;
+                currentIntersection = t1;
             }
 
             if (t2 >= 0 && t2 < minT)
             {
                 minT = t2;
                 closestSphere = sphere;
-                currentT = t2;
+                currentIntersection = t2;
             }
         }
     }
@@ -154,19 +180,18 @@ Vector trace(const Ray &ray, const Scene &scene)
 
     Sphere closestSphere = scene.spheres[0];
     float t;
-    // Perform shading calculation (currently a simple color)
-    Vector clocal = Vector(1, 1, 1); // White color for now
 
     if (!intersect(ray, scene.spheres, closestSphere, t))
     {
         return scene.backgroundColor;
     }
+    Vector clocal = closestSphere.color;
     Vector intersection = ray.origin + ray.direction * t;
     Vector cre = trace(Ray(intersection, ray.direction, ray.depth + 1), scene);
     Vector cra = Vector(0, 0, 0); // Assume black color for refraction for now
     // kRe + kRa not done yet
 
-    return clocal + cre + cra;
+    return clocal + cre * closestSphere.kr + cra * closestSphere.ka;
 }
 
 // Split file info into tokens
@@ -356,7 +381,7 @@ void writePPM(const std::string &filename, const std::vector<std::vector<Vector>
                 int r = static_cast<int>(std::round(pixel.x * 255));
                 int g = static_cast<int>(std::round(pixel.y * 255));
                 int b = static_cast<int>(std::round(pixel.z * 255));
-                std::cout << "R " << r << " G " << g << " B" << b << std::endl;
+                // std::cout << "R " << r << " G " << g << " B" << b << std::endl;
 
                 ppmFile << r << " " << g << " " << b << " ";
             }
@@ -427,12 +452,17 @@ int main(int argc, char *argv[])
     {
         for (int c = 0; c < scene.width; ++c)
         {
-            float pixelX = static_cast<float>(c) / scene.width - 0.5f;
-            float pixelY = 0.5f - static_cast<float>(r) / scene.height;
-            Vector pixelDirection(pixelX, pixelY, -scene.near);
-            Ray ray(eye, pixelDirection.normalize(), 1);
+            // float pixelX = static_cast<float>(c) / scene.width - 0.5f;
+            // float pixelY = 0.5f - static_cast<float>(r) / scene.height;
+            // float u = -scene.width + (2.0 * scene.width * c) / scene.width;
+            // float v = -scene.height + (2.0 * scene.height * r) / scene.height;
+            float u = scene.left + (scene.right - scene.left) * (c + 0.5) / scene.width;
+            float v = scene.bottom + (scene.top - scene.bottom) * (r + 0.5) / scene.height;
+            Vector pixelDirection = Vector(u, v, -scene.near).normalize();
+            Ray ray(eye, pixelDirection, 1);
 
             Vector color = trace(ray, scene);
+            // std::cout << color.x << "\n";
             pixelValues[r][c] = color;
         }
     }
