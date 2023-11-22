@@ -33,6 +33,18 @@ struct Vector
         return Vector(x * scalar, y * scalar, z * scalar);
     }
 
+    Vector &operator=(const Vector &other)
+    {
+        if (this != &other)
+        {
+            // Copy members from 'other' to 'this'
+            x = other.x;
+            y = other.y;
+            z = other.z;
+        }
+        return *this;
+    }
+
     Vector normalize() const
     {
         double length = std::sqrt(x * x + y * y + z * z);
@@ -118,23 +130,15 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
 
         Vector invTrans = Vector(inverseT[3][0], inverseT[3][1], inverseT[3][2]);
         Vector invScale = Vector(inverseT[0][0], inverseT[1][1], inverseT[2][2]);
-        Vector invOrigin = ray.origin * invTrans;
-        Vector invDirection = ray.origin * invScale;
+        Vector invOrigin = (ray.origin - invTrans);
+        Vector invDirection = ray.direction * invScale;
 
         float currentIntersection;
-        // std::cout << invTrans.x << " | " << invTrans.y << " | " << invTrans.z << " || " << invScale.x << " | " << invScale.y << " | " << invScale.z << "\n";
 
-        Vector s = ray.origin - sphere.position;    // S
-        float a = ray.direction.dot(ray.direction); // |c|^2
-        float b = 2.0f * s.dot(ray.direction);      // 2 (S * c)
-        float c = s.dot(s) - 1;                     // S^2 - 1
+        float a = invDirection.dot(invDirection);     // |c|^2
+        float b = 2.0f * invOrigin.dot(invDirection); // 2 (S * c)
+        float c = invOrigin.dot(invOrigin) - 1;       // S^2 - 1
         float discriminant = b * b - 4 * a * c;
-
-        // Vector s = invOrigin - sphere.position;   // S
-        // float a = invDirection.dot(invDirection); // |c|^2
-        // float b = 2.0f * s.dot(invDirection);     // 2 (S * c)
-        // float c = s.dot(s) - 1;                   // S^2 - 1
-        // float discriminant = b * b - 4 * a * c;
 
         // 2 Intersections
         if (discriminant > 0)
@@ -143,14 +147,14 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
             float t1 = (-b - std::sqrt(discriminant)) / (2.0f * a);
             float t2 = (-b + std::sqrt(discriminant)) / (2.0f * a);
 
-            if (t1 >= 0 && t1 < minT)
+            if (t1 < minT)
             {
                 minT = t1;
                 closestSphere = sphere;
                 currentIntersection = t1;
             }
 
-            if (t2 >= 0 && t2 < minT)
+            if (t2 < minT)
             {
                 minT = t2;
                 closestSphere = sphere;
@@ -188,6 +192,7 @@ Vector trace(const Ray &ray, const Scene &scene)
     Vector clocal = closestSphere.color;
     Vector intersection = ray.origin + ray.direction * t;
     Vector cre = trace(Ray(intersection, ray.direction, ray.depth + 1), scene);
+    // Vector cre = Vector(0, 0, 0);
     Vector cra = Vector(0, 0, 0); // Assume black color for refraction for now
     // kRe + kRa not done yet
 
@@ -297,70 +302,6 @@ Scene readInputFile(const std::string &filename)
     return scene;
 }
 
-// Output in P6 format, a binary file containing:
-// P6
-// ncolumns nrows
-// Max colour value
-// colours in binary format thus unreadable
-void save_imageP6(int Width, int Height, char *fname, unsigned char *pixels)
-{
-    FILE *fp;
-    const int maxVal = 255;
-
-    printf("Saving image %s: %d x %d\n", fname, Width, Height);
-    fp = fopen(fname, "wb");
-    if (!fp)
-    {
-        printf("Unable to open file '%s'\n", fname);
-        return;
-    }
-    fprintf(fp, "P6\n");
-    fprintf(fp, "%d %d\n", Width, Height);
-    fprintf(fp, "%d\n", maxVal);
-
-    for (int j = 0; j < Height; j++)
-    {
-        fwrite(&pixels[j * Width * 3], 3, Width, fp);
-    }
-
-    fclose(fp);
-}
-
-// Output in P3 format, a text file containing:
-// P3
-// ncolumns nrows
-// Max colour value (for us, and usually 255)
-// r1 g1 b1 r2 g2 b2 .....
-void save_imageP3(int Width, int Height, char *fname, unsigned char *pixels)
-{
-    FILE *fp;
-    const int maxVal = 255;
-
-    printf("Saving image %s: %d x %d\n", fname, Width, Height);
-    fp = fopen(fname, "w");
-    if (!fp)
-    {
-        printf("Unable to open file '%s'\n", fname);
-        return;
-    }
-    fprintf(fp, "P3\n");
-    fprintf(fp, "%d %d\n", Width, Height);
-    fprintf(fp, "%d\n", maxVal);
-
-    int k = 0;
-    for (int j = 0; j < Height; j++)
-    {
-
-        for (int i = 0; i < Width; i++)
-        {
-            fprintf(fp, " %d %d %d", pixels[k], pixels[k + 1], pixels[k + 2]);
-            k = k + 3;
-        }
-        fprintf(fp, "\n");
-    }
-    fclose(fp);
-}
-
 void writePPM(const std::string &filename, const std::vector<std::vector<Vector>> &pixelValues)
 {
     std::ofstream ppmFile(filename);
@@ -374,8 +315,9 @@ void writePPM(const std::string &filename, const std::vector<std::vector<Vector>
                 << width << " " << height << "\n255\n";
 
         // Write pixel values
-        for (const auto &row : pixelValues)
+        for (auto it = pixelValues.rbegin(); it != pixelValues.rend(); ++it) // Reverse drawing order to bottom to top
         {
+            const auto &row = *it;
             for (const auto &pixel : row)
             {
                 int r = static_cast<int>(std::round(pixel.x * 255));
@@ -452,10 +394,9 @@ int main(int argc, char *argv[])
     {
         for (int c = 0; c < scene.width; ++c)
         {
-            // float pixelX = static_cast<float>(c) / scene.width - 0.5f;
-            // float pixelY = 0.5f - static_cast<float>(r) / scene.height;
             // float u = -scene.width + (2.0 * scene.width * c) / scene.width;
             // float v = -scene.height + (2.0 * scene.height * r) / scene.height;
+            // Works
             float u = scene.left + (scene.right - scene.left) * (c + 0.5) / scene.width;
             float v = scene.bottom + (scene.top - scene.bottom) * (r + 0.5) / scene.height;
             Vector pixelDirection = Vector(u, v, -scene.near).normalize();
