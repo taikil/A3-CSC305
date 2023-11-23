@@ -33,6 +33,14 @@ struct Vector
         return Vector(x * scalar, y * scalar, z * scalar);
     }
 
+    Vector &operator+=(const Vector &other)
+    {
+        x += other.x;
+        y += other.y;
+        z += other.z;
+        return *this;
+    }
+
     Vector &operator=(const Vector &other)
     {
         if (this != &other)
@@ -59,6 +67,10 @@ struct Vector
     Vector() : x(0), y(0), z(0) {}
 };
 
+Vector operator*(double scalar, const Vector &v)
+{
+    return Vector(scalar * v.x, scalar * v.y, scalar * v.z);
+}
 // Ray class
 struct Ray
 {
@@ -73,11 +85,12 @@ struct Sphere
     std::string name;
     Vector position, scale, color;
     double ka, kd, ks, kr, n;
+    double T[4][4];
 
     Sphere(const std::string &name, const Vector &position, const Vector &scale,
            const Vector &color, double ka, double kd, double ks, double kr, double n)
         : name(name), position(position), scale(scale), color(color), ka(ka), kd(kd), ks(ks), kr(kr), n(n) {}
-    Sphere() : name(""), position(0, 0, 0), scale(0, 0, 0), color(0, 0, 0), ka(0), kd(0), ks(0), kr(0), n(0) {}
+    Sphere() : name(""), position(0, 0, 0), scale(0, 0, 0), color(0, 0, 0), ka(0), kd(0), ks(0), kr(0), n(0), T{} {}
 };
 
 struct Light
@@ -115,6 +128,7 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
     float minT = std::numeric_limits<float>::infinity();
     for (const auto &sphere : spheres)
     {
+        // Type gymnastics
         double T[4][4]{};
         T[0][0] = sphere.scale.x;
         T[1][1] = sphere.scale.y;
@@ -165,6 +179,7 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
     if (minT < std::numeric_limits<float>::infinity())
     {
         t = minT;
+        // std::cout << t << "\n";
         return true; // Intersection found
     }
     else
@@ -189,14 +204,53 @@ Vector trace(const Ray &ray, const Scene &scene)
     {
         return scene.backgroundColor;
     }
-    Vector clocal = closestSphere.color;
-    Vector intersection = ray.origin + ray.direction * t;
-    Vector cre = trace(Ray(intersection, ray.direction, ray.depth + 1), scene);
-    // Vector cre = Vector(0, 0, 0);
-    Vector cra = Vector(0, 0, 0); // Assume black color for refraction for now
-    // kRe + kRa not done yet
 
-    return clocal + cre * closestSphere.kr + cra * closestSphere.ka;
+    // S + ct
+    Vector localIntersection = ray.origin + ray.direction * t;
+    // Normal * Inverse Transpose of T would just be xyz * scale(xyz) respectively
+    Vector localNormal = ((localIntersection - closestSphere.position) * closestSphere.scale).normalize();
+
+    // Calculate ambient color
+    // Ka*Ia[c]*O[c]
+    Vector ambient = scene.ambientColor * closestSphere.ka * closestSphere.color;
+    // Base for diffuse and specular
+    Vector diffuse(0, 0, 0);
+    Vector specular(0, 0, 0);
+    for (const auto &light : scene.lights)
+    {
+        Vector lightDirection = (light.position - localIntersection).normalize();
+        float NdotL = localNormal.dot(lightDirection);
+
+        // Shadow ray calculation
+        Ray shadowRay(localIntersection + lightDirection * 0.0001, lightDirection, 0);
+        Sphere shadowClosestSphere;
+        float shadowT;
+
+        if (!intersect(shadowRay, scene.spheres, shadowClosestSphere, shadowT))
+        {
+            // No intersection with shadow ray, calculate diffuse and specular terms
+
+            // Diffuse reflection
+
+            Vector reflectionDirection = (-2.0 * NdotL * localNormal - lightDirection).normalize();
+            float RdotV = std::max(0.0, reflectionDirection.dot(ray.direction * -1));
+
+            // Accumulate diffuse and specular terms
+            // L[c] * kd * NdotL * O[c]
+            diffuse += light.color * closestSphere.kd * NdotL * closestSphere.color;
+            // L[c] * ks * RdotV^n
+            specular += light.color * closestSphere.ks * std::pow(RdotV, closestSphere.n);
+        }
+        // If there is an intersection with the shadow ray, the point is in shadow, so no contribution.
+    }
+    Vector reflectionDirection = (ray.direction - (2.0f * (ray.direction).dot(localNormal) * localNormal)).normalize();
+
+    // Create the reflected ray
+    Vector cre = trace(Ray(localIntersection + reflectionDirection * 0.0001, reflectionDirection, ray.depth + 1), scene);
+    Vector cra = Vector(0, 0, 0); // Assume black color for refraction for now
+
+    // Combine all terms to get the final color
+    return ambient + diffuse + specular + closestSphere.kr * cre + closestSphere.ka * cra;
 }
 
 // Split file info into tokens
@@ -273,6 +327,13 @@ Scene readInputFile(const std::string &filename)
                               Vector(std::stod(tokens[8]), std::stod(tokens[9]), std::stod(tokens[10])),
                               std::stod(tokens[11]), std::stod(tokens[12]), std::stod(tokens[13]),
                               std::stod(tokens[14]), std::stod(tokens[15]));
+                sphere.T[0][0] = sphere.scale.x;
+                sphere.T[1][1] = sphere.scale.y;
+                sphere.T[2][2] = sphere.scale.z;
+                sphere.T[3][0] = sphere.position.x;
+                sphere.T[3][1] = sphere.position.y;
+                sphere.T[3][2] = sphere.position.z;
+                sphere.T[3][3] = 1;
                 scene.spheres.push_back(sphere);
             }
             else if (tokens[0] == "LIGHT")
@@ -375,13 +436,11 @@ void printScene(const Scene &scene)
     std::cout << "OUTPUT FILENAME: " << scene.outputFilename << std::endl;
 }
 
-using namespace std;
-
 int main(int argc, char *argv[])
 {
     if (argc != 2)
     {
-        cout << "Error, missing filename, call the command as \"./Raytracer [filename.txt]\"\n";
+        std::cout << "Error, missing filename, call the command as \"./Raytracer [filename.txt]\"\n";
         exit(1);
     }
     Scene scene = readInputFile(argv[1]);
@@ -394,16 +453,16 @@ int main(int argc, char *argv[])
     {
         for (int c = 0; c < scene.width; ++c)
         {
-            // float u = -scene.width + (2.0 * scene.width * c) / scene.width;
-            // float v = -scene.height + (2.0 * scene.height * r) / scene.height;
-            // Works
+            // [0, 600]
+            //  float u2 = -scene.width + (2.0 * scene.width * c) / scene.width;
+            //  float v2 = -scene.height + (2.0 * scene.height * r) / scene.height;
+            //  Pixel coords from [-1, 1]
             float u = scene.left + (scene.right - scene.left) * (c + 0.5) / scene.width;
             float v = scene.bottom + (scene.top - scene.bottom) * (r + 0.5) / scene.height;
             Vector pixelDirection = Vector(u, v, -scene.near).normalize();
             Ray ray(eye, pixelDirection, 1);
 
             Vector color = trace(ray, scene);
-            // std::cout << color.x << "\n";
             pixelValues[r][c] = color;
         }
     }
