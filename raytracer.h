@@ -66,8 +66,15 @@ struct Vector
         return x * other.x + y * other.y + z * other.z;
     }
 
+    friend std::ostream &operator<<(std::ostream &os, const Vector &vector);
     Vector() : x(0), y(0), z(0) {}
 };
+
+std::ostream &operator<<(std::ostream &os, const Vector &vector)
+{
+    os << "{ x: " << vector.x << ", y: " << vector.y << ", z: " << vector.z << " }";
+    return os;
+}
 
 Vector operator*(double scalar, const Vector &v)
 {

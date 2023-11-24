@@ -15,6 +15,30 @@ double det2x2(double a, double b, double c, double d);
  */
 
 #define SMALL_NUMBER 1.e-8
+
+void multiply(double vector[4], double matrix[4][4], double result[4])
+{
+  for (int i = 0; i < 4; ++i)
+  {
+    result[i] = 0;
+    for (int j = 0; j < 4; ++j)
+    {
+      result[i] += vector[j] * matrix[j][i];
+    }
+  }
+}
+
+void transpose(double in[4][4], double out[4][4])
+{
+  for (int i = 0; i < 4; ++i)
+  {
+    for (int j = 0; j < 4; ++j)
+    {
+      out[i][j] = in[j][i];
+    }
+  }
+}
+
 void invert_matrix(double A[4][4], double Ainv[4][4])
 {
   int i, j;

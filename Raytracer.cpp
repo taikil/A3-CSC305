@@ -7,20 +7,34 @@
 #include "raytracer.h"
 #include "invert.cpp"
 
+void printMatrix(const double matrix[4][4])
+{
+    for (int i = 0; i < 4; ++i)
+    {
+        for (int j = 0; j < 4; ++j)
+        {
+            std::cout << matrix[i][j] << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
 int invert(const Sphere &sphere, double (&inverseT)[4][4])
 {
     double T[4][4]{};
     T[0][0] = sphere.scale.x;
     T[1][1] = sphere.scale.y;
     T[2][2] = sphere.scale.z;
-    T[3][0] = sphere.position.x;
-    T[3][1] = sphere.position.y;
-    T[3][2] = sphere.position.z;
+    T[0][3] = sphere.position.x;
+    T[1][3] = sphere.position.y;
+    T[2][3] = sphere.position.z;
     T[3][3] = 1;
 
-    // double inverseT[4][4]{};
-
     invert_matrix(T, inverseT);
+    // printMatrix(T);
+    // std::cout << "______" << std::endl;
+    // printMatrix(inverseT);
+    // std::cout << " Next: " << std::endl;
     return 0;
 }
 
@@ -34,13 +48,16 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
         // Type gymnastics
 
         double inverseT[4][4]{};
-
         invert(sphere, inverseT);
 
-        Vector invTrans = Vector(inverseT[3][0], inverseT[3][1], inverseT[3][2]);
+        Vector invTrans = Vector(inverseT[0][3], inverseT[1][3], inverseT[2][3]);
         Vector invScale = Vector(inverseT[0][0], inverseT[1][1], inverseT[2][2]);
-        Vector invOrigin = (ray.origin - invTrans);
+        Vector invOrigin = (ray.origin + invTrans);
         Vector invDirection = ray.direction * invScale;
+        // std::cout << invTrans << std::endl;
+        // std::cout << "Original Position: " << sphere.position << "Inv Origin: " << invOrigin << std::endl;
+        // std::cout << "Original Direction: " << sphere.scale << "Inv Direction: " << invDirection << "\n"
+        //           << std::endl;
 
         float currentIntersection;
 
@@ -52,6 +69,7 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
         // 2 Intersections
         if (discriminant > 0)
         {
+
             // Find the nearest intersection point
             float t1 = (-b - std::sqrt(discriminant)) / (2.0f * a);
             float t2 = (-b + std::sqrt(discriminant)) / (2.0f * a);
@@ -103,11 +121,20 @@ Vector trace(const Ray &ray, const Scene &scene)
 
     // S + ct_h
     Vector localIntersection = ray.origin + (ray.direction * t);
-    // Normal * Inverse Transpose of T would just be xyz * scale(xyz) respectively
+    // Normal * Inverse Transpose of T
     double inverseT[4][4]{};
+    double transposed[4][4]{};
+    double intersection[4]{};
+    double result[4]{};
+    intersection[0] = localIntersection.x;
+    intersection[1] = localIntersection.y;
+    intersection[2] = localIntersection.z;
     invert(closestSphere, inverseT);
-    Vector invScale = Vector(inverseT[0][0], inverseT[1][1], inverseT[2][2]);
-    Vector localNormal = ((localIntersection)*invScale);
+    transpose(inverseT, transposed);
+    multiply(intersection, transposed, result);
+    Vector invT = Vector(result[0], result[1], result[2]);
+    // std::cout << invT << std::endl;
+    Vector localNormal = ((localIntersection)*invT);
 
     // Ka*Ia[c]*O[c]
     Vector ambient = scene.ambientColor * closestSphere.ka * closestSphere.color;
@@ -118,8 +145,7 @@ Vector trace(const Ray &ray, const Scene &scene)
 
     for (const auto &light : scene.lights)
     {
-        // Vector lightDirection = (light.position - localIntersection).normalize();
-        Vector lightDirection = (localIntersection - light.position).normalize();
+        Vector lightDirection = (light.position - localIntersection).normalize();
         float NdotL = localNormal.dot(lightDirection);
 
         // Shadow ray calculation
