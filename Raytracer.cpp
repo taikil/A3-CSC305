@@ -31,18 +31,14 @@ int invert(const Sphere &sphere, double (&inverseT)[4][4])
     T[3][3] = 1;
 
     invert_matrix(T, inverseT);
-    // printMatrix(T);
-    // std::cout << "______" << std::endl;
-    // printMatrix(inverseT);
-    // std::cout << " Next: " << std::endl;
     return 0;
 }
 
 // Check if a ray intersects with a sphere
-bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &closestSphere, float &t)
+bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &closestSphere, double &t)
 {
     // Initialize "min"
-    float minT = std::numeric_limits<float>::infinity();
+    double minT = std::numeric_limits<double>::infinity();
     for (const auto &sphere : spheres)
     {
         // Type gymnastics
@@ -55,12 +51,12 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
         Vector invOrigin = (ray.origin + invTrans);
         Vector invDirection = ray.direction * invScale;
 
-        float currentIntersection;
+        double currentIntersection;
 
-        float a = invDirection.dot(invDirection);     // |c|^2
-        float b = 2.0f * invOrigin.dot(invDirection); // 2 (S * c)
-        float c = invOrigin.dot(invOrigin) - 1;       // S^2 - 1
-        float discriminant = b * b - 4 * a * c;
+        double a = invDirection.dot(invDirection);     // |c|^2
+        double b = 2.0f * invOrigin.dot(invDirection); // 2 (S * c)
+        double c = invOrigin.dot(invOrigin) - 1;       // S^2 - 1
+        double discriminant = b * b - 4 * a * c;
 
         // 2 Intersections
         if (discriminant > 0)
@@ -70,14 +66,14 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
             float t1 = (-b - std::sqrt(discriminant)) / (2.0f * a);
             float t2 = (-b + std::sqrt(discriminant)) / (2.0f * a);
 
-            if (t1 < minT)
+            if (t1 < minT && t1 > 0)
             {
                 minT = t1;
                 closestSphere = sphere;
                 currentIntersection = t1;
             }
 
-            if (t2 < minT)
+            if (t2 < minT && t > 0)
             {
                 minT = t2;
                 closestSphere = sphere;
@@ -85,10 +81,12 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
             }
         }
     }
-    if (minT < std::numeric_limits<float>::infinity())
+    if (minT < std::numeric_limits<double>::infinity())
     {
         t = minT;
-        // std::cout << t << "\n";
+        // std::cout << t << std::endl;
+        // std::cout << ray << std::endl;
+        // std::cout << "Closest: " << closestSphere.position << std::endl;
         return true; // Intersection found
     }
     else
@@ -108,7 +106,7 @@ Vector trace(const Ray &ray, const Scene &scene)
 
     Sphere closestSphere = scene.spheres[0];
 
-    float t;
+    double t;
 
     if (!intersect(ray, scene.spheres, closestSphere, t))
     {
@@ -135,31 +133,35 @@ Vector trace(const Ray &ray, const Scene &scene)
         float NdotL = std::max(0.0, localNormal.dot(lightDirection));
         // Shadow ray calculation
         Sphere shadowClosestSphere;
-        float shadowT;
+        double shadowT;
         Ray shadowRay = Ray(localIntersection + lightDirection * 0.0001, lightDirection, 0);
+        // std::cout << "Shadow Ray" << shadowRay << std::endl;
 
-        // if (!intersect(shadowRay, scene.spheres, shadowClosestSphere, shadowT))
-        // {
-        // No intersection with shadow ray, calculate diffuse and specular terms
+        if (!intersect(shadowRay, scene.spheres, shadowClosestSphere, shadowT))
+        {
+            // No intersection with shadow ray, calculate diffuse and specular terms
 
-        // L[c] * kd * NdotL * O[c]
-        diffuse += (light.color * closestSphere.kd * std::max(0.0f, NdotL) * closestSphere.color);
-        // std::cout << "diffuse: " << diffuse << "\n";
+            // L[c] * kd * NdotL * O[c]
+            diffuse += (light.color * closestSphere.kd * std::max(0.0f, NdotL) * closestSphere.color);
+            // std::cout << "diffuse: " << diffuse << "\n";
 
-        Vector reflectionDirection = (-2.0 * localNormal.dot(ray.direction) * localNormal + ray.direction).normalize();
-        // float RdotV = std::max(0.0, reflectionDirection.dot(ray.direction * -1));
-        float RdotV = std::max(0.0, reflectionDirection.dot((ray.origin - localIntersection).normalize()));
+            Vector reflectionDirection = (-2.0 * localNormal.dot(ray.direction) * localNormal + ray.direction).normalize();
+            // float RdotV = std::max(0.0, reflectionDirection.dot(ray.direction * -1));
+            float RdotV = std::max(0.0, reflectionDirection.dot((ray.origin - localIntersection).normalize()));
 
-        // L[c] * ks * RdotV^n
-        specular += light.color * closestSphere.ks * std::pow(RdotV, closestSphere.n);
-        // }
+            // L[c] * ks * RdotV^n
+            specular += light.color * closestSphere.ks * std::pow(RdotV, closestSphere.n);
+        }
         // If there is an intersection with the shadow ray, the point is in shadow, so no contribution.
     }
     // v = −2(N⋅c)⋅N+c.
-    Vector reflectionDirection = (-2.0f * ((ray.direction).dot(localNormal) * localNormal) + ray.direction).normalize();
+    Vector reflectionDirection = ((-2.0f * ((localNormal).dot(ray.direction) * localNormal)) + ray.direction).normalize();
 
     // Create the reflected ray
-    Vector cre = trace(Ray(localIntersection + reflectionDirection * 0.0001, reflectionDirection, ray.depth + 1), scene);
+    Ray reflectedRay = Ray(localIntersection + reflectionDirection * 0.0001, reflectionDirection, ray.depth + 1);
+    std::cout << "Reflect ray: " << reflectedRay << std::endl;
+    Vector cre = trace(reflectedRay, scene);
+    std::cout << "Reflect Color: " << cre << std::endl;
     // Vector cre = Vector(0, 0, 0);
     Vector cra = Vector(0, 0, 0); // Assume black color for refraction for now
 
@@ -371,6 +373,7 @@ int main(int argc, char *argv[])
             // Calculate the ray direction
             Vector pixelDirection = Vector(u, v, -scene.near).normalize();
             Ray ray(eye, pixelDirection, 0);
+            // std::cout << ray << std::endl;
 
             Vector color = trace(ray, scene);
             pixelValues[r][c] = color;

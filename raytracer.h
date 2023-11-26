@@ -106,7 +106,14 @@ struct Ray
     int depth;
 
     Ray(const Vector &origin, const Vector &direction, int depth) : origin(origin), direction(direction), depth(depth) {}
+    friend std::ostream &operator<<(std::ostream &os, const Ray &ray);
 };
+
+std::ostream &operator<<(std::ostream &os, const Ray &ray)
+{
+    os << "{ Origin: " << ray.origin << ", Direction: " << ray.direction << ", z: " << ray.depth << " }";
+    return os;
+}
 
 struct Sphere
 {
