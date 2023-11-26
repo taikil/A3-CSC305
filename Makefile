@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++11
+CXXFLAGS = -std=c++20
 
 Raytracer: Raytracer.cpp
 	$(CXX) $(CXXFLAGS) Raytracer.cpp -o Raytracer

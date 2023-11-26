@@ -66,6 +66,25 @@ struct Vector
         return x * other.x + y * other.y + z * other.z;
     }
 
+    Vector clamp() const
+    {
+        Vector output = Vector(x, y, z);
+        if (x > 1)
+        {
+            output = Vector(1, y, z);
+        }
+        if (y > 1)
+        {
+            output = Vector(x, 1, z);
+        }
+        if (z > 1)
+        {
+            output = Vector(x, y, 1);
+        }
+        std::cout << output << std::endl;
+        return output;
+    }
+
     friend std::ostream &operator<<(std::ostream &os, const Vector &vector);
     Vector() : x(0), y(0), z(0) {}
 };

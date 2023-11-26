@@ -54,10 +54,6 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
         Vector invScale = Vector(inverseT[0][0], inverseT[1][1], inverseT[2][2]);
         Vector invOrigin = (ray.origin + invTrans);
         Vector invDirection = ray.direction * invScale;
-        // std::cout << invTrans << std::endl;
-        // std::cout << "Original Position: " << sphere.position << "Inv Origin: " << invOrigin << std::endl;
-        // std::cout << "Original Direction: " << sphere.scale << "Inv Direction: " << invDirection << "\n"
-        //           << std::endl;
 
         float currentIntersection;
 
@@ -122,19 +118,8 @@ Vector trace(const Ray &ray, const Scene &scene)
     // S + ct_h
     Vector localIntersection = ray.origin + (ray.direction * t);
     // Normal * Inverse Transpose of T
-    double inverseT[4][4]{};
-    double transposed[4][4]{};
-    double intersection[4]{};
-    double result[4]{};
-    intersection[0] = localIntersection.x;
-    intersection[1] = localIntersection.y;
-    intersection[2] = localIntersection.z;
-    invert(closestSphere, inverseT);
-    transpose(inverseT, transposed);
-    multiply(intersection, transposed, result);
-    Vector invT = Vector(result[0], result[1], result[2]);
-    // std::cout << invT << std::endl;
-    Vector localNormal = ((localIntersection)*invT);
+    Vector squared = Vector(closestSphere.scale.x * closestSphere.scale.x, closestSphere.scale.y * closestSphere.scale.y, closestSphere.scale.z * closestSphere.scale.z);
+    Vector localNormal = ((localIntersection - closestSphere.position) / squared).normalize();
 
     // Ka*Ia[c]*O[c]
     Vector ambient = scene.ambientColor * closestSphere.ka * closestSphere.color;
@@ -146,27 +131,28 @@ Vector trace(const Ray &ray, const Scene &scene)
     for (const auto &light : scene.lights)
     {
         Vector lightDirection = (light.position - localIntersection).normalize();
-        float NdotL = localNormal.dot(lightDirection);
-
+        // float NdotL = localNormal.dot(localIntersection);
+        float NdotL = std::max(0.0, localNormal.dot(lightDirection));
         // Shadow ray calculation
         Sphere shadowClosestSphere;
         float shadowT;
+        Ray shadowRay = Ray(localIntersection + lightDirection * 0.0001, lightDirection, 0);
 
-        if (!intersect(Ray(localIntersection + lightDirection * 0.0001, lightDirection, 0), scene.spheres, shadowClosestSphere, shadowT))
-        {
-            // No intersection with shadow ray, calculate diffuse and specular terms
+        // if (!intersect(shadowRay, scene.spheres, shadowClosestSphere, shadowT))
+        // {
+        // No intersection with shadow ray, calculate diffuse and specular terms
 
-            // Diffuse reflection
+        // L[c] * kd * NdotL * O[c]
+        diffuse += (light.color * closestSphere.kd * std::max(0.0f, NdotL) * closestSphere.color);
+        // std::cout << "diffuse: " << diffuse << "\n";
 
-            Vector reflectionDirection = (-2.0 * NdotL * localNormal + lightDirection).normalize();
-            float RdotV = std::max(0.0, reflectionDirection.dot(ray.direction * -1));
+        Vector reflectionDirection = (-2.0 * localNormal.dot(ray.direction) * localNormal + ray.direction).normalize();
+        // float RdotV = std::max(0.0, reflectionDirection.dot(ray.direction * -1));
+        float RdotV = std::max(0.0, reflectionDirection.dot((ray.origin - localIntersection).normalize()));
 
-            // Accumulate diffuse and specular terms
-            // L[c] * kd * NdotL * O[c]
-            diffuse += light.color * closestSphere.kd * NdotL * closestSphere.color;
-            // L[c] * ks * RdotV^n
-            specular += light.color * closestSphere.ks * std::pow(RdotV, closestSphere.n);
-        }
+        // L[c] * ks * RdotV^n
+        specular += light.color * closestSphere.ks * std::pow(RdotV, closestSphere.n);
+        // }
         // If there is an intersection with the shadow ray, the point is in shadow, so no contribution.
     }
     // v = −2(N⋅c)⋅N+c.
@@ -177,8 +163,10 @@ Vector trace(const Ray &ray, const Scene &scene)
     // Vector cre = Vector(0, 0, 0);
     Vector cra = Vector(0, 0, 0); // Assume black color for refraction for now
 
+    // std::cout << "final c: " << ambient + diffuse + specular + closestSphere.kr * cre + closestSphere.ka * cra << "\n";
     // Combine all terms to get the final color
-    return ambient + diffuse + specular + closestSphere.kr * cre + closestSphere.ka * cra;
+    Vector totalColor = ambient + diffuse + specular + closestSphere.kr * cre + closestSphere.ka * cra;
+    return totalColor;
 }
 
 // Split file info into tokens
@@ -297,7 +285,7 @@ void writePPM(const std::string &filename, const std::vector<std::vector<Vector>
                 << width << " " << height << "\n255\n";
 
         // Write pixel values
-        for (auto it = pixelValues.rbegin(); it != pixelValues.rend(); ++it) // Reverse drawing order to bottom to top
+        for (auto it = pixelValues.rbegin(); it != pixelValues.rend(); ++it)
         {
             const auto &row = *it;
             for (const auto &pixel : row)
@@ -305,6 +293,7 @@ void writePPM(const std::string &filename, const std::vector<std::vector<Vector>
                 int r = static_cast<int>(std::round(pixel.x * 255));
                 int g = static_cast<int>(std::round(pixel.y * 255));
                 int b = static_cast<int>(std::round(pixel.z * 255));
+
                 // std::cout << "R " << r << " G " << g << " B" << b << std::endl;
 
                 ppmFile << r << " " << g << " " << b << " ";
@@ -372,12 +361,13 @@ int main(int argc, char *argv[])
     // Loop through each pixel
     for (int r = 0; r < scene.height; ++r)
     {
+        // -W + W2c/nCols
+        float v = -scene.right + (2.0 * scene.right * r) / scene.height;
         for (int c = 0; c < scene.width; ++c)
         {
-            // -W + W2c/nCols
+
             // -H + H2r/nRows
             float u = -scene.top + (2.0 * scene.top * c) / scene.width;
-            float v = -scene.right + (2.0 * scene.right * r) / scene.height;
             // Calculate the ray direction
             Vector pixelDirection = Vector(u, v, -scene.near).normalize();
             Ray ray(eye, pixelDirection, 0);
