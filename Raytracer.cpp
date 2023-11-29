@@ -73,7 +73,7 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
                 currentIntersection = t1;
             }
 
-            if (t2 < minT && t > 0)
+            if (t2 < minT && t2 > 0)
             {
                 minT = t2;
                 closestSphere = sphere;
@@ -129,7 +129,6 @@ Vector trace(const Ray &ray, const Scene &scene)
     for (const auto &light : scene.lights)
     {
         Vector lightDirection = (light.position - localIntersection).normalize();
-        // float NdotL = localNormal.dot(localIntersection);
         float NdotL = std::max(0.0, localNormal.dot(lightDirection));
         // Shadow ray calculation
         Sphere shadowClosestSphere;
@@ -145,9 +144,9 @@ Vector trace(const Ray &ray, const Scene &scene)
             diffuse += (light.color * closestSphere.kd * std::max(0.0f, NdotL) * closestSphere.color);
             // std::cout << "diffuse: " << diffuse << "\n";
 
-            Vector reflectionDirection = (-2.0 * localNormal.dot(ray.direction) * localNormal + ray.direction).normalize();
-            // float RdotV = std::max(0.0, reflectionDirection.dot(ray.direction * -1));
-            float RdotV = std::max(0.0, reflectionDirection.dot((ray.origin - localIntersection).normalize()));
+            Vector rDirection = (-2.0 * localNormal.dot(ray.direction.normalize()) * localNormal + ray.direction.normalize()).normalize();
+            // Vector rDirection = (-2.0 * localNormal.dot(shadowRay.direction.normalize()) * localNormal + shadowRay.direction.normalize()).normalize();
+            float RdotV = std::max(0.0, rDirection.dot((ray.origin - localIntersection).normalize()));
 
             // L[c] * ks * RdotV^n
             specular += light.color * closestSphere.ks * std::pow(RdotV, closestSphere.n);
@@ -155,7 +154,8 @@ Vector trace(const Ray &ray, const Scene &scene)
         // If there is an intersection with the shadow ray, the point is in shadow, so no contribution.
     }
     // v = −2(N⋅c)⋅N+c.
-    Vector reflectionDirection = ((-2.0f * ((localNormal).dot(ray.direction) * localNormal)) + ray.direction).normalize();
+    // Vector reflectionDirection = ((-2.0f * ((localNormal).dot(ray.direction.normalize()) * localNormal)) + ray.direction.normalize()).normalize();
+    Vector reflectionDirection = ray.direction.normalize() - (2.0f * ray.direction.normalize().dot(localNormal) * localNormal);
 
     // Create the reflected ray
     Ray reflectedRay = Ray(localIntersection + reflectionDirection * 0.0001, reflectionDirection, ray.depth + 1);
