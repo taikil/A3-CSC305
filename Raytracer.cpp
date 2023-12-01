@@ -144,7 +144,7 @@ Vector trace(const Ray &ray, const Scene &scene)
             diffuse += (light.color * closestSphere.kd * std::max(0.0f, NdotL) * closestSphere.color);
             // std::cout << "diffuse: " << diffuse << "\n";
 
-            Vector rDirection = (-2.0 * localNormal.dot(ray.direction.normalize()) * localNormal + ray.direction.normalize()).normalize();
+            Vector rDirection = (2.0 * localNormal.dot(lightDirection.normalize()) * localNormal - lightDirection.normalize()).normalize();
             // Vector rDirection = (-2.0 * localNormal.dot(shadowRay.direction.normalize()) * localNormal + shadowRay.direction.normalize()).normalize();
             float RdotV = std::max(0.0, rDirection.dot((ray.origin - localIntersection).normalize()));
 
@@ -159,9 +159,9 @@ Vector trace(const Ray &ray, const Scene &scene)
 
     // Create the reflected ray
     Ray reflectedRay = Ray(localIntersection + reflectionDirection * 0.0001, reflectionDirection, ray.depth + 1);
-    std::cout << "Reflect ray: " << reflectedRay << std::endl;
+    // std::cout << "Reflect ray: " << reflectedRay << std::endl;
     Vector cre = trace(reflectedRay, scene);
-    std::cout << "Reflect Color: " << cre << std::endl;
+    // std::cout << "Reflect Color: " << cre << std::endl;
     // Vector cre = Vector(0, 0, 0);
     Vector cra = Vector(0, 0, 0); // Assume black color for refraction for now
 
