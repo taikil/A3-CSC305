@@ -7,18 +7,6 @@
 #include "raytracer.h"
 #include "invert.cpp"
 
-void printMatrix(const double matrix[4][4])
-{
-    for (int i = 0; i < 4; ++i)
-    {
-        for (int j = 0; j < 4; ++j)
-        {
-            std::cout << matrix[i][j] << " ";
-        }
-        std::cout << std::endl;
-    }
-}
-
 int invert(const Sphere &sphere, double (&inverseT)[4][4])
 {
     double T[4][4]{};
@@ -35,13 +23,19 @@ int invert(const Sphere &sphere, double (&inverseT)[4][4])
 }
 
 // Check if a ray intersects with a sphere
-bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &closestSphere, double &t)
+bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &closestSphere, double &t, bool isShadowRay)
 {
     // Initialize "min"
     double minT = std::numeric_limits<double>::infinity();
     for (const auto &sphere : spheres)
     {
         // Type gymnastics
+        // std::cout << "Current sphere: " << sphere.name << std::endl;
+        double rayLength = 0.0;
+        if (ray.origin == Vector(0, 0, 0))
+        {
+            rayLength = ray.direction.length();
+        }
 
         double inverseT[4][4]{};
         invert(sphere, inverseT);
@@ -66,15 +60,28 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
             float t1 = (-b - std::sqrt(discriminant)) / (2.0f * a);
             float t2 = (-b + std::sqrt(discriminant)) / (2.0f * a);
 
-            if (t1 < minT && t1 > 0)
+            if (t1 > rayLength && t1 < minT && t1 > 0)
             {
+                if (isShadowRay)
+                {
+                    std::cout << "ShadowRay!" << std::endl;
+                    return true; // Intersection found for shadow ray
+                }
+                // std::cout << "MinT " << minT << " T1: " << t1 << std::endl;
                 minT = t1;
                 closestSphere = sphere;
                 currentIntersection = t1;
             }
 
-            if (t2 < minT && t2 > 0)
+            if (t2 > rayLength && t2 < minT && t2 > 0)
             {
+                if (isShadowRay)
+                {
+                    std::cout << "ShadowRay!" << std::endl;
+                    return true; // Intersection found for shadow ray
+                }
+
+                // std::cout << "MinT " << minT << " T2: " << t2 << std::endl;
                 minT = t2;
                 closestSphere = sphere;
                 currentIntersection = t2;
@@ -83,10 +90,8 @@ bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &close
     }
     if (minT < std::numeric_limits<double>::infinity())
     {
+        std::cout << "MinT " << minT << " T: " << t << std::endl;
         t = minT;
-        // std::cout << t << std::endl;
-        // std::cout << ray << std::endl;
-        // std::cout << "Closest: " << closestSphere.position << std::endl;
         return true; // Intersection found
     }
     else
@@ -108,16 +113,20 @@ Vector trace(const Ray &ray, const Scene &scene)
 
     double t;
 
-    if (!intersect(ray, scene.spheres, closestSphere, t))
+    if (!intersect(ray, scene.spheres, closestSphere, t, false) && ray.origin == Vector(0, 0, 0))
     {
         return scene.backgroundColor;
+    }
+    else if (!intersect(ray, scene.spheres, closestSphere, t, false) && ray.origin != Vector(0, 0, 0))
+    {
+        return Vector(0, 0, 0);
     }
 
     // S + ct_h
     Vector localIntersection = ray.origin + (ray.direction * t);
     // Normal * Inverse Transpose of T
     Vector squared = Vector(closestSphere.scale.x * closestSphere.scale.x, closestSphere.scale.y * closestSphere.scale.y, closestSphere.scale.z * closestSphere.scale.z);
-    Vector localNormal = ((localIntersection - closestSphere.position) / squared).normalize();
+    Vector normal = ((localIntersection - closestSphere.position) / squared).normalize();
 
     // Ka*Ia[c]*O[c]
     Vector ambient = scene.ambientColor * closestSphere.ka * closestSphere.color;
@@ -129,22 +138,21 @@ Vector trace(const Ray &ray, const Scene &scene)
     for (const auto &light : scene.lights)
     {
         Vector lightDirection = (light.position - localIntersection).normalize();
-        float NdotL = std::max(0.0, localNormal.dot(lightDirection));
+        float NdotL = std::max(0.0, normal.dot(lightDirection));
         // Shadow ray calculation
         Sphere shadowClosestSphere;
         double shadowT;
         Ray shadowRay = Ray(localIntersection + lightDirection * 0.0001, lightDirection, 0);
         // std::cout << "Shadow Ray" << shadowRay << std::endl;
 
-        if (!intersect(shadowRay, scene.spheres, shadowClosestSphere, shadowT))
+        if (!intersect(shadowRay, scene.spheres, shadowClosestSphere, shadowT, true))
         {
             // No intersection with shadow ray, calculate diffuse and specular terms
 
             // L[c] * kd * NdotL * O[c]
             diffuse += (light.color * closestSphere.kd * std::max(0.0f, NdotL) * closestSphere.color);
-            // std::cout << "diffuse: " << diffuse << "\n";
 
-            Vector rDirection = (2.0 * localNormal.dot(lightDirection.normalize()) * localNormal - lightDirection.normalize()).normalize();
+            Vector rDirection = (2.0 * normal.dot(lightDirection.normalize()) * normal - lightDirection.normalize()).normalize();
             // Vector rDirection = (-2.0 * localNormal.dot(shadowRay.direction.normalize()) * localNormal + shadowRay.direction.normalize()).normalize();
             float RdotV = std::max(0.0, rDirection.dot((ray.origin - localIntersection).normalize()));
 
@@ -154,20 +162,20 @@ Vector trace(const Ray &ray, const Scene &scene)
         // If there is an intersection with the shadow ray, the point is in shadow, so no contribution.
     }
     // v = −2(N⋅c)⋅N+c.
-    // Vector reflectionDirection = ((-2.0f * ((localNormal).dot(ray.direction.normalize()) * localNormal)) + ray.direction.normalize()).normalize();
-    Vector reflectionDirection = ray.direction.normalize() - (2.0f * ray.direction.normalize().dot(localNormal) * localNormal);
+    Vector reflectionDirection = (-2.0 * normal.dot(ray.direction) * normal + ray.direction).normalize();
+    // Vector reflectionDirection = (ray.direction - (2.0f * ray.direction.dot(localNormal) * localNormal)).normalize();
 
     // Create the reflected ray
     Ray reflectedRay = Ray(localIntersection + reflectionDirection * 0.0001, reflectionDirection, ray.depth + 1);
-    // std::cout << "Reflect ray: " << reflectedRay << std::endl;
+    // Ray reflectedRay = Ray(localIntersection + reflectionDirection * 0.0001, localNormal, ray.depth + 1);
     Vector cre = trace(reflectedRay, scene);
-    // std::cout << "Reflect Color: " << cre << std::endl;
     // Vector cre = Vector(0, 0, 0);
     Vector cra = Vector(0, 0, 0); // Assume black color for refraction for now
 
     // std::cout << "final c: " << ambient + diffuse + specular + closestSphere.kr * cre + closestSphere.ka * cra << "\n";
     // Combine all terms to get the final color
-    Vector totalColor = ambient + diffuse + specular + closestSphere.kr * cre + closestSphere.ka * cra;
+
+    Vector totalColor = ambient + diffuse + specular + (closestSphere.kr * cre) + closestSphere.ka * cra;
     return totalColor;
 }
 
@@ -371,10 +379,10 @@ int main(int argc, char *argv[])
             // -H + H2r/nRows
             float u = -scene.top + (2.0 * scene.top * c) / scene.width;
             // Calculate the ray direction
-            Vector pixelDirection = Vector(u, v, -scene.near).normalize();
+            Vector pixelDirection = Vector(u, v, -scene.near);
             Ray ray(eye, pixelDirection, 0);
             // std::cout << ray << std::endl;
-
+            // std::cout << "Pixel (x,y): (" << r << ", " << c << ")\n";
             Vector color = trace(ray, scene);
             pixelValues[r][c] = color;
         }

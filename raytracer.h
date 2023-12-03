@@ -85,6 +85,21 @@ struct Vector
         return output;
     }
 
+    double length() const
+    {
+        return std::sqrt(x * x + y * y + z * z);
+    }
+
+    bool operator==(const Vector &other) const
+    {
+        return x == other.x && y == other.y && z == other.z;
+    }
+
+    bool operator!=(const Vector &other) const
+    {
+        return x != other.x || y != other.y || z != other.z;
+    }
+
     friend std::ostream &operator<<(std::ostream &os, const Vector &vector);
     Vector() : x(0), y(0), z(0) {}
 };
