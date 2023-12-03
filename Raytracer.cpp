@@ -90,7 +90,6 @@ bool closest_intersection(const Ray &ray, const std::vector<Sphere> &spheres, Sp
     return (t < std::numeric_limits<double>::infinity());
 }
 
-// Trace rays and calculate pixel color
 // Function to perform ADS calculations for a given intersection point
 Vector ADS(const Ray &ray, const Scene &scene, const Sphere &closestSphere, const Vector &localIntersection, const Vector &normal)
 {
@@ -109,8 +108,9 @@ Vector ADS(const Ray &ray, const Scene &scene, const Sphere &closestSphere, cons
         Sphere shadowClosestSphere;
         double shadowT;
         Ray shadowRay = Ray(localIntersection + lightDirection * 0.00001, lightDirection.normalize(), 0);
+        // std::cout << "Shadow Ray: " << shadowRay << "\n";
 
-        if (!closest_intersection(shadowRay, scene.spheres, shadowClosestSphere, shadowT) || shadowT > 1.0)
+        if (!closest_intersection(shadowRay, scene.spheres, shadowClosestSphere, shadowT) || shadowT > (light.position - localIntersection).length())
         {
             // No intersection with shadow ray or intersection beyond the light source
             // Calculate diffuse and specular terms
@@ -148,6 +148,10 @@ Vector trace(const Ray &ray, const Scene &scene)
     {
         return scene.backgroundColor;
     }
+    else if (!closest_intersection(ray, scene.spheres, closestSphere, t) && ray.origin == Vector(0, 0, 0))
+    {
+        return Vector(0, 0, 0);
+    }
 
     // S + ct_h
     Vector localIntersection = ray.origin + (ray.direction * t);
@@ -165,31 +169,42 @@ Vector trace(const Ray &ray, const Scene &scene)
     Ray reflectedRay = Ray(localIntersection + reflectionDirection * 0.00001, reflectionDirection, ray.depth + 1);
 
     // Trace reflections
-    Vector reflectionColor = trace(reflectedRay, scene);
+    // Vector reflectionColor = trace(reflectedRay, scene);
+    Vector reflectionColor = Vector(0, 0, 0);
 
     // Combine ADS and reflections
     Vector totalColor = adsColor + (closestSphere.kr * reflectionColor);
     return totalColor;
 }
 
-// Split file info into tokens
-std::vector<std::string> split(const std::string &str, char delimiter)
+// // Split file info into tokens
+std::vector<std::string> split(const std::string &str, const std::string &delimiters)
 {
     std::vector<std::string> tokens;
-    std::istringstream tokenStream(str);
-    std::string token;
-    while (std::getline(tokenStream, token, delimiter))
+    std::size_t start = 0, end;
+
+    while ((end = str.find_first_of(delimiters, start)) != std::string::npos)
     {
-        // Remove leading and trailing whitespaces from each token
+        // Extract token and remove leading/trailing whitespaces
+        std::string token = str.substr(start, end - start);
         token.erase(token.find_last_not_of(" \t") + 1);
         token.erase(0, token.find_first_not_of(" \t"));
-        tokens.push_back(token);
+
+        // Add non-empty tokens to the result
+        if (!token.empty())
+            tokens.push_back(token);
+
+        start = end + 1; // Move to the next character after the delimiter
     }
-    // get rid of empties
-    tokens.erase(std::remove_if(tokens.begin(), tokens.end(),
-                                [](const std::string &s)
-                                { return s.empty(); }),
-                 tokens.end());
+
+    // Add the last token if any
+    std::string lastToken = str.substr(start);
+    lastToken.erase(lastToken.find_last_not_of(" \t") + 1);
+    lastToken.erase(0, lastToken.find_first_not_of(" \t"));
+
+    if (!lastToken.empty())
+        tokens.push_back(lastToken);
+
     return tokens;
 }
 
@@ -208,7 +223,7 @@ Scene readInputFile(const std::string &filename)
 
     while (std::getline(inputFile, line))
     {
-        std::vector<std::string> tokens = split(line, ' ');
+        std::vector<std::string> tokens = split(line, " \t");
 
         if (tokens.size() >= 2)
         {
