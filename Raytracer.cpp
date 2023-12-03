@@ -23,81 +23,112 @@ int invert(const Sphere &sphere, double (&inverseT)[4][4])
 }
 
 // Check if a ray intersects with a sphere
-bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &closestSphere, double &t, bool isShadowRay)
+bool intersect(const Ray &ray, const Sphere &sphere, double &t)
 {
-    // Initialize "min"
+    double rayLength = 0.0;
+    if (ray.origin == Vector(0, 0, 0))
+    {
+        rayLength = ray.direction.length();
+    }
+
+    double inverseT[4][4]{};
+    invert(sphere, inverseT);
+
+    Vector invTrans = Vector(inverseT[0][3], inverseT[1][3], inverseT[2][3]);
+    Vector invScale = Vector(inverseT[0][0], inverseT[1][1], inverseT[2][2]);
+    Vector invOrigin = (ray.origin + invTrans);
+    Vector invDirection = ray.direction * invScale;
+
+    double a = invDirection.dot(invDirection);     // |c|^2
+    double b = 2.0f * invOrigin.dot(invDirection); // 2 (S * c)
+    double c = invOrigin.dot(invOrigin) - 1;       // S^2 - 1
+    double discriminant = b * b - 4 * a * c;
+
+    if (discriminant > 0)
+    {
+        // Find the nearest intersection point
+        float t1 = (-b - std::sqrt(discriminant)) / (2.0f * a);
+        float t2 = (-b + std::sqrt(discriminant)) / (2.0f * a);
+
+        if (t1 > rayLength && t1 > 0 && (t1 < t2 || (t2 < 0 && t1 >= 0)))
+        {
+            t = t1;
+            return true;
+        }
+
+        if (t2 > rayLength && t2 > 0 && (t2 < t1 || (t1 < 0 && t2 >= 0)))
+        {
+            t = t2;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Find the closest intersection among spheres
+bool closest_intersection(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &closestSphere, double &t)
+{
     double minT = std::numeric_limits<double>::infinity();
+
     for (const auto &sphere : spheres)
     {
-        // Type gymnastics
-        // std::cout << "Current sphere: " << sphere.name << std::endl;
-        double rayLength = 0.0;
-        if (ray.origin == Vector(0, 0, 0))
+        double currentT;
+
+        if (intersect(ray, sphere, currentT))
         {
-            rayLength = ray.direction.length();
-        }
-
-        double inverseT[4][4]{};
-        invert(sphere, inverseT);
-
-        Vector invTrans = Vector(inverseT[0][3], inverseT[1][3], inverseT[2][3]);
-        Vector invScale = Vector(inverseT[0][0], inverseT[1][1], inverseT[2][2]);
-        Vector invOrigin = (ray.origin + invTrans);
-        Vector invDirection = ray.direction * invScale;
-
-        double currentIntersection;
-
-        double a = invDirection.dot(invDirection);     // |c|^2
-        double b = 2.0f * invOrigin.dot(invDirection); // 2 (S * c)
-        double c = invOrigin.dot(invOrigin) - 1;       // S^2 - 1
-        double discriminant = b * b - 4 * a * c;
-
-        // 2 Intersections
-        if (discriminant > 0)
-        {
-
-            // Find the nearest intersection point
-            float t1 = (-b - std::sqrt(discriminant)) / (2.0f * a);
-            float t2 = (-b + std::sqrt(discriminant)) / (2.0f * a);
-
-            if (t1 > rayLength && t1 < minT && t1 > 0)
+            if (currentT < minT)
             {
-                if (isShadowRay)
-                {
-                    std::cout << "ShadowRay!" << std::endl;
-                    return true; // Intersection found for shadow ray
-                }
-                // std::cout << "MinT " << minT << " T1: " << t1 << std::endl;
-                minT = t1;
+                minT = currentT;
                 closestSphere = sphere;
-                currentIntersection = t1;
-            }
-
-            if (t2 > rayLength && t2 < minT && t2 > 0)
-            {
-                if (isShadowRay)
-                {
-                    std::cout << "ShadowRay!" << std::endl;
-                    return true; // Intersection found for shadow ray
-                }
-
-                // std::cout << "MinT " << minT << " T2: " << t2 << std::endl;
-                minT = t2;
-                closestSphere = sphere;
-                currentIntersection = t2;
             }
         }
     }
-    if (minT < std::numeric_limits<double>::infinity())
+
+    t = minT;
+
+    return (t < std::numeric_limits<double>::infinity());
+}
+
+// Trace rays and calculate pixel color
+// Function to perform ADS calculations for a given intersection point
+Vector ADS(const Ray &ray, const Scene &scene, const Sphere &closestSphere, const Vector &localIntersection, const Vector &normal)
+{
+    // Ka*Ia[c]*O[c]
+    Vector ambient = scene.ambientColor * closestSphere.ka * closestSphere.color;
+
+    // Base for diffuse and specular
+    Vector diffuse(0, 0, 0);
+    Vector specular(0, 0, 0);
+
+    for (const auto &light : scene.lights)
     {
-        std::cout << "MinT " << minT << " T: " << t << std::endl;
-        t = minT;
-        return true; // Intersection found
+        Vector lightDirection = (light.position - localIntersection).normalize();
+        float NdotL = std::max(0.0, normal.dot(lightDirection));
+        // Shadow ray calculation
+        Sphere shadowClosestSphere;
+        double shadowT;
+        Ray shadowRay = Ray(localIntersection + lightDirection * 0.00001, lightDirection.normalize(), 0);
+
+        if (!closest_intersection(shadowRay, scene.spheres, shadowClosestSphere, shadowT) || shadowT > 1.0)
+        {
+            // No intersection with shadow ray or intersection beyond the light source
+            // Calculate diffuse and specular terms
+
+            // L[c] * kd * NdotL * O[c]
+            diffuse += (light.color * closestSphere.kd * std::max(0.0f, NdotL) * closestSphere.color);
+
+            Vector rDirection = (2.0 * normal.dot(lightDirection.normalize()) * normal - lightDirection.normalize()).normalize();
+            float RdotV = std::max(0.0, rDirection.dot((ray.origin - localIntersection).normalize()));
+
+            // L[c] * ks * RdotV^n
+            specular += light.color * closestSphere.ks * std::pow(RdotV, closestSphere.n);
+        }
+        // If there is an intersection with the shadow ray, the point is in shadow, so no contribution.
     }
-    else
-    {
-        return false; // No intersection
-    }
+
+    Vector totalColor = ambient + diffuse + specular;
+    return totalColor;
 }
 
 // Trace rays and calculate pixel color
@@ -113,13 +144,9 @@ Vector trace(const Ray &ray, const Scene &scene)
 
     double t;
 
-    if (!intersect(ray, scene.spheres, closestSphere, t, false) && ray.origin == Vector(0, 0, 0))
+    if (!closest_intersection(ray, scene.spheres, closestSphere, t) && ray.origin == Vector(0, 0, 0))
     {
         return scene.backgroundColor;
-    }
-    else if (!intersect(ray, scene.spheres, closestSphere, t, false) && ray.origin != Vector(0, 0, 0))
-    {
-        return Vector(0, 0, 0);
     }
 
     // S + ct_h
@@ -128,54 +155,20 @@ Vector trace(const Ray &ray, const Scene &scene)
     Vector squared = Vector(closestSphere.scale.x * closestSphere.scale.x, closestSphere.scale.y * closestSphere.scale.y, closestSphere.scale.z * closestSphere.scale.z);
     Vector normal = ((localIntersection - closestSphere.position) / squared).normalize();
 
-    // Ka*Ia[c]*O[c]
-    Vector ambient = scene.ambientColor * closestSphere.ka * closestSphere.color;
+    // Calculate ADS components
+    Vector adsColor = ADS(ray, scene, closestSphere, localIntersection, normal);
 
-    // Base for diffuse and specular
-    Vector diffuse(0, 0, 0);
-    Vector specular(0, 0, 0);
-
-    for (const auto &light : scene.lights)
-    {
-        Vector lightDirection = (light.position - localIntersection).normalize();
-        float NdotL = std::max(0.0, normal.dot(lightDirection));
-        // Shadow ray calculation
-        Sphere shadowClosestSphere;
-        double shadowT;
-        Ray shadowRay = Ray(localIntersection + lightDirection * 0.0001, lightDirection, 0);
-        // std::cout << "Shadow Ray" << shadowRay << std::endl;
-
-        if (!intersect(shadowRay, scene.spheres, shadowClosestSphere, shadowT, true))
-        {
-            // No intersection with shadow ray, calculate diffuse and specular terms
-
-            // L[c] * kd * NdotL * O[c]
-            diffuse += (light.color * closestSphere.kd * std::max(0.0f, NdotL) * closestSphere.color);
-
-            Vector rDirection = (2.0 * normal.dot(lightDirection.normalize()) * normal - lightDirection.normalize()).normalize();
-            // Vector rDirection = (-2.0 * localNormal.dot(shadowRay.direction.normalize()) * localNormal + shadowRay.direction.normalize()).normalize();
-            float RdotV = std::max(0.0, rDirection.dot((ray.origin - localIntersection).normalize()));
-
-            // L[c] * ks * RdotV^n
-            specular += light.color * closestSphere.ks * std::pow(RdotV, closestSphere.n);
-        }
-        // If there is an intersection with the shadow ray, the point is in shadow, so no contribution.
-    }
     // v = −2(N⋅c)⋅N+c.
     Vector reflectionDirection = (-2.0 * normal.dot(ray.direction) * normal + ray.direction).normalize();
-    // Vector reflectionDirection = (ray.direction - (2.0f * ray.direction.dot(localNormal) * localNormal)).normalize();
 
     // Create the reflected ray
-    Ray reflectedRay = Ray(localIntersection + reflectionDirection * 0.0001, reflectionDirection, ray.depth + 1);
-    // Ray reflectedRay = Ray(localIntersection + reflectionDirection * 0.0001, localNormal, ray.depth + 1);
-    Vector cre = trace(reflectedRay, scene);
-    // Vector cre = Vector(0, 0, 0);
-    Vector cra = Vector(0, 0, 0); // Assume black color for refraction for now
+    Ray reflectedRay = Ray(localIntersection + reflectionDirection * 0.00001, reflectionDirection, ray.depth + 1);
 
-    // std::cout << "final c: " << ambient + diffuse + specular + closestSphere.kr * cre + closestSphere.ka * cra << "\n";
-    // Combine all terms to get the final color
+    // Trace reflections
+    Vector reflectionColor = trace(reflectedRay, scene);
 
-    Vector totalColor = ambient + diffuse + specular + (closestSphere.kr * cre) + closestSphere.ka * cra;
+    // Combine ADS and reflections
+    Vector totalColor = adsColor + (closestSphere.kr * reflectionColor);
     return totalColor;
 }
 

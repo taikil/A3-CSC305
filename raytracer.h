@@ -171,7 +171,8 @@ struct Scene
 };
 
 int invert(const Sphere &sphere, double (&inverseT)[4][4]);
-bool intersect(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &closestSphere, float &t);
+bool intersect(const Ray &ray, const Sphere &sphere, double &t);
+bool closest_intersection(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &closestSphere, double &t, bool isShadowRay);
 Vector trace(const Ray &ray, const Scene &scene);
 std::vector<std::string> split(const std::string &str, char delimiter);
 Scene readInputFile(const std::string &filename);
