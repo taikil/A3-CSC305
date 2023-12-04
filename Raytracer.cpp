@@ -32,7 +32,7 @@ bool intersect(const Ray &ray, const Sphere &sphere, double &t, bool &inside)
         if ((t1 > rayLength && t1 > 0) || (t2 > rayLength && t2 > 0))
         {
             t = std::min(t1, t2);
-            // Check if inside Sphere
+            // Check if inside Sphere, -1 for near plane
             if ((t1 - 1) * (t2 - 1) <= 0 && ray.origin == Vector(0, 0, 0))
             {
                 t = std::max(t1, t2);
