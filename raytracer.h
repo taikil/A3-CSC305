@@ -47,7 +47,6 @@ struct Vector
     {
         if (this != &other)
         {
-            // Copy members from 'other' to 'this'
             x = other.x;
             y = other.y;
             z = other.z;
@@ -81,7 +80,6 @@ struct Vector
         {
             output = Vector(x, y, 1);
         }
-        std::cout << output << std::endl;
         return output;
     }
 
