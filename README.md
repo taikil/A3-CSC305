@@ -17,7 +17,6 @@ testReflection - Complete
 testSample - Complete
 testShadow - Complete
 testSpecular - Complete
-
 ```
 
 This raytracer program simulates the rendering of 3D scenes using the ray tracing technique. To compile and run the raytracer, follow the instructions below.
