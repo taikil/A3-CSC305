@@ -7,20 +7,8 @@
 #include "raytracer.h"
 #include "invert.cpp"
 
-int invert(const Sphere &sphere, double (&inverseT)[4][4])
-{
-    double T[4][4] = {
-        {sphere.scale.x, 0.0, 0.0, sphere.position.x},
-        {0.0, sphere.scale.y, 0.0, sphere.position.y},
-        {0.0, 0.0, sphere.scale.z, sphere.position.z},
-        {0.0, 0.0, 0.0, 1.0}};
-
-    invert_matrix(T, inverseT);
-    return 0;
-}
-
 // Check if a ray intersects with a sphere
-bool intersect(const Ray &ray, const Sphere &sphere, double &t)
+bool intersect(const Ray &ray, const Sphere &sphere, double &t, bool &inside)
 {
     double rayLength = 0.0;
     if (ray.origin == Vector(0, 0, 0))
@@ -41,10 +29,16 @@ bool intersect(const Ray &ray, const Sphere &sphere, double &t)
         // Find the nearest intersection point
         float t1 = (-b - std::sqrt(discriminant)) / (2.0f * a);
         float t2 = (-b + std::sqrt(discriminant)) / (2.0f * a);
-
         if ((t1 > rayLength && t1 > 0) || (t2 > rayLength && t2 > 0))
         {
             t = std::min(t1, t2);
+            // Check if inside Sphere
+            if ((t1 - 1) * (t2 - 1) <= 0 && ray.origin == Vector(0, 0, 0))
+            {
+                t = std::max(t1, t2);
+                inside = true;
+            }
+
             return true;
         }
     }
@@ -53,7 +47,7 @@ bool intersect(const Ray &ray, const Sphere &sphere, double &t)
 }
 
 // Find the closest intersection among spheres
-bool closest_intersection(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &closestSphere, double &t)
+bool closest_intersection(const Ray &ray, const std::vector<Sphere> &spheres, Sphere &closestSphere, double &t, bool &inside)
 {
     double minT = std::numeric_limits<double>::infinity();
 
@@ -61,7 +55,7 @@ bool closest_intersection(const Ray &ray, const std::vector<Sphere> &spheres, Sp
     {
         double currentT;
 
-        if (intersect(ray, sphere, currentT))
+        if (intersect(ray, sphere, currentT, inside))
         {
             if (currentT < minT)
             {
@@ -77,7 +71,7 @@ bool closest_intersection(const Ray &ray, const std::vector<Sphere> &spheres, Sp
 }
 
 // Function to perform ADS calculations for a given intersection point
-Vector ADS(const Ray &ray, const Scene &scene, const Sphere &closestSphere, const Vector &localIntersection, const Vector &normal)
+Vector ADS(const Ray &ray, const Scene &scene, const Sphere &closestSphere, const Vector &localIntersection, Vector &normal, bool &inside)
 {
     // Ka*Ia[c]*O[c]
     Vector ambient = scene.ambientColor * closestSphere.ka * closestSphere.color;
@@ -91,20 +85,15 @@ Vector ADS(const Ray &ray, const Scene &scene, const Sphere &closestSphere, cons
         Vector lightDirection = (light.position - localIntersection).normalize();
 
         float NdotL = normal.dot(lightDirection);
-        if (NdotL < 0)
-        {
-            // normal.x = normal.x * -1
-        }
 
         // Shadow ray calculation
         Sphere shadowClosestSphere;
         double shadowT;
         Ray shadowRay = Ray(localIntersection + normal * 0.00001, lightDirection.normalize(), 0);
 
-        if (!closest_intersection(shadowRay, scene.spheres, shadowClosestSphere, shadowT))
+        if (!closest_intersection(shadowRay, scene.spheres, shadowClosestSphere, shadowT, inside) || (inside && light.position == shadowClosestSphere.position))
         {
             // No intersection with shadow ray or intersection beyond the light source
-            // Calculate diffuse and specular terms
 
             // L[c] * kd * NdotL * O[c]
             diffuse += (light.color * closestSphere.kd * NdotL * closestSphere.color);
@@ -114,10 +103,6 @@ Vector ADS(const Ray &ray, const Scene &scene, const Sphere &closestSphere, cons
 
             // L[c] * ks * RdotV^n
             specular += light.color * closestSphere.ks * std::pow(RdotV, closestSphere.n);
-        }
-        else
-        {
-            Vector shadowIntersection = ray.origin + (ray.direction * shadowT);
         }
         // If there is an intersection with the shadow ray, the point is in shadow, so no contribution.
     }
@@ -138,12 +123,13 @@ Vector trace(const Ray &ray, const Scene &scene)
     Sphere closestSphere = scene.spheres[0];
 
     double t;
+    bool inside = false;
 
-    if (!closest_intersection(ray, scene.spheres, closestSphere, t) && ray.origin == Vector(0, 0, 0))
+    if (!closest_intersection(ray, scene.spheres, closestSphere, t, inside) && ray.origin == Vector(0, 0, 0))
     {
         return scene.backgroundColor;
     }
-    else if (!closest_intersection(ray, scene.spheres, closestSphere, t) && ray.origin != Vector(0, 0, 0))
+    else if (!closest_intersection(ray, scene.spheres, closestSphere, t, inside) && ray.origin != Vector(0, 0, 0))
     {
         return Vector(0, 0, 0);
     }
@@ -154,8 +140,13 @@ Vector trace(const Ray &ray, const Scene &scene)
     Vector squared = Vector(closestSphere.scale.x * closestSphere.scale.x, closestSphere.scale.y * closestSphere.scale.y, closestSphere.scale.z * closestSphere.scale.z);
     Vector normal = ((localIntersection - closestSphere.position) / squared).normalize();
 
+    if (inside)
+    {
+        normal = -1 * normal;
+    }
+
     // Calculate ADS components
-    Vector adsColor = ADS(ray, scene, closestSphere, localIntersection, normal);
+    Vector adsColor = ADS(ray, scene, closestSphere, localIntersection, normal, inside);
 
     // v = −2(N⋅c)⋅N+c.
     Vector reflectionDirection = (-2.0 * normal.dot(ray.direction) * normal + ray.direction).normalize();
@@ -307,8 +298,6 @@ void writePPM(const std::string &filename, const std::vector<std::vector<Vector>
                 int g = static_cast<int>(std::round(pixel.y * 255));
                 int b = static_cast<int>(std::round(pixel.z * 255));
 
-                // std::cout << "R " << r << " G " << g << " B" << b << std::endl;
-
                 ppmFile << r << " " << g << " " << b << " ";
             }
             ppmFile << "\n";
@@ -367,7 +356,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
     Scene scene = readInputFile(argv[1]);
-    printScene(scene);
+    // printScene(scene);
     Vector eye(0, 0, 0);
     std::vector<std::vector<Vector>> pixelValues(scene.height, std::vector<Vector>(scene.width));
 
@@ -384,7 +373,6 @@ int main(int argc, char *argv[])
             // Calculate the ray direction
             Vector pixelDirection = Vector(u, v, -scene.near).normalize();
             Ray ray(eye, pixelDirection, 0);
-            // std::cout << ray << std::endl;
             // std::cout << "Pixel (x,y): (" << r << ", " << c << ")\n";
             Vector color = trace(ray, scene);
             pixelValues[r][c] = color;
