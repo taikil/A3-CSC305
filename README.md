@@ -4,11 +4,11 @@
 
 # Sample Outputs
 
-![Test Image](taikil/Raytracer-MkI/Raytracer-Outputs/testAll.png)
-![Test Image 2](taikil/Raytracer-MkI/Raytracer-Outputs/test2.png)
-![Test Shadows](taikil/Raytracer-MkI/Raytracer-Outputs/testShadows.png)
-![Test Sample](taikil/Raytracer-MkI/Raytracer-Outputs/testSample.png)
-![Test Reflection](taikil/Raytracer-MkI/Raytracer-Outputs/testReflection.png)
+![Test Image](taikil/Raytracer-Mki/Raytracer-Outputs/testAll.png)
+![Test Image 2](taikil/Raytracer-Mki/Raytracer-Outputs/test2.png)
+![Test Shadows](taikil/Raytracer-Mki/Raytracer-Outputs/testShadows.png)
+![Test Sample](taikil/Raytracer-Mki/Raytracer-Outputs/testSample.png)
+![Test Reflection](taikil/Raytracer-Mki/Raytracer-Outputs/testReflection.png)
 
 # Completed Tasks
 
